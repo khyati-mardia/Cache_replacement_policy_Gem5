@@ -1,0 +1,378 @@
+diff '--exclude=build' '--exclude=.git' '--exclude=tests' -x '*.pyc' -x parsetab.py -x sftp-config.json -uNr gem5-master_new/src/mem/cache/replacement_policies/ReplacementPolicies.py gem5-master/src/mem/cache/replacement_policies/ReplacementPolicies.py
+--- gem5-master_new/src/mem/cache/replacement_policies/ReplacementPolicies.py	2019-02-07 13:49:53.000000000 -0700
++++ gem5-master/src/mem/cache/replacement_policies/ReplacementPolicies.py	2019-02-25 19:38:37.528652150 -0700
+@@ -84,6 +84,20 @@
+     btp = Param.Percent(3,
+         "Percentage of blocks to be inserted with long RRPV")
+ 
++class SRRIP(BRRIPRP):
++    hit_priority=Param.Bool(True, "Prioritize evicting blocks that haven't had a hit recently")
++    btp=100
++
++class SHIPRP(BaseReplacementPolicy):
++    type = 'SHIPRP'
++    cxx_class = 'SHIPRP'
++    cxx_header = "mem/cache/replacement_policies/ship_rp.hh"
++    max_RRPV = Param.Int(3, "Maximum RRPV possible")
++    hit_priority = Param.Bool(False,
++        "Prioritize evicting blocks that havent had a hit recently")
++    btp = Param.Percent(3,
++        "Percentage of blocks to be inserted with long RRPV")
++
+ class RRIPRP(BRRIPRP):
+     btp = 0
+ 
+diff '--exclude=build' '--exclude=.git' '--exclude=tests' -x '*.pyc' -x parsetab.py -x sftp-config.json -uNr gem5-master_new/src/mem/cache/replacement_policies/SConscript gem5-master/src/mem/cache/replacement_policies/SConscript
+--- gem5-master_new/src/mem/cache/replacement_policies/SConscript	2019-02-07 13:49:53.000000000 -0700
++++ gem5-master/src/mem/cache/replacement_policies/SConscript	2019-02-26 21:57:57.981111550 -0700
+@@ -41,3 +41,4 @@
+ Source('random_rp.cc')
+ Source('second_chance_rp.cc')
+ Source('tree_plru_rp.cc')
++Source('ship_rp.cc')
+diff '--exclude=build' '--exclude=.git' '--exclude=tests' -x '*.pyc' -x parsetab.py -x sftp-config.json -uNr gem5-master_new/src/mem/cache/replacement_policies/ship_rp.cc gem5-master/src/mem/cache/replacement_policies/ship_rp.cc
+--- gem5-master_new/src/mem/cache/replacement_policies/ship_rp.cc	1969-12-31 17:00:00.000000000 -0700
++++ gem5-master/src/mem/cache/replacement_policies/ship_rp.cc	2019-02-26 21:59:18.716726447 -0700
+@@ -0,0 +1,176 @@
++/**
++ * Copyright (c) 2018 Inria
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met: redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer;
++ * redistributions in binary form must reproduce the above copyright
++ * notice, this list of conditions and the following disclaimer in the
++ * documentation and/or other materials provided with the distribution;
++ * neither the name of the copyright holders nor the names of its
++ * contributors may be used to endorse or promote products derived from
++ * this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Authors: Daniel Carvalho
++ */
++
++#include "mem/cache/replacement_policies/ship_rp.hh"
++
++#include <cassert>
++#include <memory>
++
++#include "base/logging.hh" // For fatal_if
++#include "base/random.hh"
++#include "params/SHIPRP.hh"
++
++
++SHIPRP::SHIPRP(const Params *p)
++    : BaseReplacementPolicy(p),
++      maxRRPV(p->max_RRPV), hitPriority(p->hit_priority), btp(p->btp)
++{
++    fatal_if(maxRRPV <= 0, "max_RRPV should be greater than zero.\n");
++}
++
++void
++SHIPRP::invalidate(const std::shared_ptr<ReplacementData>& replacement_data)
++const
++{
++    std::shared_ptr<SHIPReplData> casted_replacement_data =
++        std::static_pointer_cast<SHIPReplData>(replacement_data);
++
++    // Set RRPV to an invalid distance
++    casted_replacement_data->rrpv = maxRRPV + 1;
++}
++
++void
++SHIPRP::touch(const std::shared_ptr<ReplacementData>& replacement_data) const
++{
++    std::shared_ptr<SHIPReplData> casted_replacement_data =
++        std::static_pointer_cast<SHIPReplData>(replacement_data);
++
++    // Update RRPV if not 0 yet
++    // Every hit in HP mode makes the entry the last to be evicted, while
++    // in FP mode a hit makes the entry less likely to be evicted
++    if (hitPriority) {
++        casted_replacement_data->rrpv = 0;
++    } else if (casted_replacement_data->rrpv > 0) {
++        casted_replacement_data->rrpv--;
++    }
++
++    // For SHIP
++    if(shct[casted_replacement_data->signature] <7) {
++        shct[casted_replacement_data->signature] ++;
++    }
++    casted_replacement_data->outcome = true;
++
++    //std::cout<<"signature - hit"<<casted_replacement_data->signature;
++    //std::cout<<"tag - hit"<<casted_replacement_data->_tag<<std::endl;
++}
++
++void
++SHIPRP::reset(const std::shared_ptr<ReplacementData>& replacement_data) const
++{
++    std::shared_ptr<SHIPReplData> casted_replacement_data =
++        std::static_pointer_cast<SHIPReplData>(replacement_data);
++
++
++    // Hash Calculations
++
++    uint64_t x = casted_replacement_data->_tag;
++    x >>= 14;
++    casted_replacement_data->signature = (x&0x3FFF) ^ ((x>>14)&0x3FFF) ^ ((x>>28)&0x3FF); //Masking and X-ORing
++
++    //std::cout<<" Signature "<<casted_replacement_data->signature;
++    //std::cout<<" tag "<<casted_replacement_data->_tag << std::endl;
++
++    // For SHIP
++
++    if (shct[casted_replacement_data->signature]==0) {
++        casted_replacement_data->rrpv = maxRRPV; //distant re-reference
++    } else {
++        casted_replacement_data->rrpv = maxRRPV-1; //intermediate re-reference
++    }
++
++        casted_replacement_data->outcome = false;
++
++}
++
++ReplaceableEntry*
++SHIPRP::getVictim(const ReplacementCandidates& candidates) const
++{
++    // There must be at least one replacement candidate
++    assert(candidates.size() > 0);
++
++    // Use first candidate as dummy victim
++    ReplaceableEntry* victim = candidates[0];
++
++    // Store victim->rrpv in a variable to improve code readability
++    int victim_RRPV = std::static_pointer_cast<SHIPReplData>(
++                        victim->replacementData)->rrpv;
++
++    // Visit all candidates to find victim
++    for (const auto& candidate : candidates) {
++        // Get candidate's rrpv
++        int candidate_RRPV = std::static_pointer_cast<SHIPReplData>(
++                                    candidate->replacementData)->rrpv;
++
++        // Stop searching for victims if an invalid entry is found
++        if (candidate_RRPV == maxRRPV + 1) {
++            return candidate;
++        // Update victim entry if necessary
++        } else if (candidate_RRPV > victim_RRPV) {
++            victim = candidate;
++            victim_RRPV = candidate_RRPV;
++        }
++    }
++
++    // Get difference of victim's RRPV to the highest possible RRPV in
++    // order to update the RRPV of all the other entries accordingly
++    int diff = maxRRPV - victim_RRPV;
++
++    // No need to update RRPV if there is no difference
++    if (diff > 0){
++        // Update RRPV of all candidates
++        for (const auto& candidate : candidates) {
++            std::static_pointer_cast<SHIPReplData>(
++                candidate->replacementData)->rrpv += diff;
++        }
++    }
++
++std::shared_ptr<SHIPReplData> casted_replacement_data = std::static_pointer_cast<SHIPReplData>(
++                                    victim->replacementData);
++
++    if(casted_replacement_data->outcome != true){
++        if(shct[casted_replacement_data->signature] > 0){
++            shct[casted_replacement_data->signature] --;
++        }
++    }
++
++    return victim;
++}
++
++std::shared_ptr<ReplacementData>
++SHIPRP::instantiateEntry()
++{
++    return std::shared_ptr<ReplacementData>(new SHIPReplData(maxRRPV));
++}
++
++SHIPRP*
++SHIPRPParams::create()
++{
++    return new SHIPRP(this);
++}
+diff '--exclude=build' '--exclude=.git' '--exclude=tests' -x '*.pyc' -x parsetab.py -x sftp-config.json -uNr gem5-master_new/src/mem/cache/replacement_policies/ship_rp.hh gem5-master/src/mem/cache/replacement_policies/ship_rp.hh
+--- gem5-master_new/src/mem/cache/replacement_policies/ship_rp.hh	1969-12-31 17:00:00.000000000 -0700
++++ gem5-master/src/mem/cache/replacement_policies/ship_rp.hh	2019-02-26 16:33:01.046122414 -0700
+@@ -0,0 +1,162 @@
++/**
++ * Copyright (c) 2018 Inria
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met: redistributions of source code must retain the above copyright
++ * notice, this list of conditions and the following disclaimer;
++ * redistributions in binary form must reproduce the above copyright
++ * notice, this list of conditions and the following disclaimer in the
++ * documentation and/or other materials provided with the distribution;
++ * neither the name of the copyright holders nor the names of its
++ * contributors may be used to endorse or promote products derived from
++ * this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * Authors: Daniel Carvalho
++ */
++
++/**
++ * @file
++ * Declaration of a Re-Reference Interval Prediction replacement policy.
++ *
++ * Not-Recently Used (NRU) is an approximation of LRU that uses a single bit
++ * to determine if an entry is going to be re-referenced in the near or distant
++ * future.
++ *
++ * Re-Reference Interval Prediction (RRIP) is an extension of NRU that uses a
++ * re-reference prediction value to determine if entries are going to be re-
++ * used in the near future or not.
++ *
++ * The higher the value of the RRPV, the more distant the entry is from its
++ * next access.
++ *
++ * Bimodal Re-Reference Interval Prediction (BRRIP) is an extension of RRIP
++ * that has a probability of not inserting entries as the LRU. This probability
++ * is controlled by the bimodal throtle parameter (btp).
++ *
++ * From the original paper, this implementation of RRIP is also called
++ * Static RRIP (SRRIP), as it always inserts entries with the same RRPV.
++ */
++
++#ifndef __MEM_CACHE_REPLACEMENT_POLICIES_SHIP_RP_HH__
++#define __MEM_CACHE_REPLACEMENT_POLICIES_SHIP_RP_HH__
++
++#include "mem/cache/replacement_policies/base.hh"
++
++struct SHIPRPParams;
++
++class SHIPRP : public BaseReplacementPolicy
++{
++  protected:
++    /** BRRIP-specific implementation of replacement data. */
++    struct SHIPReplData : ReplacementData
++    {
++        /**
++         * Re-Reference Interval Prediction Value.
++         * A value equal to max_RRPV + 1 indicates an invalid entry.
++         */
++        int rrpv;
++        //mutable int shct[16384]={0};
++        int signature=0;
++	bool outcome=false;
++
++        /**
++         * Default constructor. Invalidate data.
++         */
++        SHIPReplData(const int max_RRPV) : rrpv(max_RRPV + 1) {}
++    };
++
++    /**
++     * Maximum Re-Reference Prediction Value possible. An entry with this
++     * value as the rrpv has the longest possible re-reference interval,
++     * that is, it is likely not to be used in the near future, and is
++     * among the best eviction candidates.
++     * A maxRRPV of 1 implies in a NRU.
++     */
++    const int maxRRPV;
++
++    /**
++     * The hit priority (HP) policy replaces entries that do not receive cache
++     * hits over any cache entry that receives a hit, while the frequency
++     * priority (FP) policy replaces infrequently re-referenced entries.
++     */
++    const bool hitPriority;
++
++    /**
++     * Bimodal throtle parameter. Value in the range [0,100] used to decide
++     * if a new entry is inserted with long or distant re-reference.
++     */
++    const unsigned btp;
++    mutable int shct[16384]={0};
++
++  public:
++    /** Convenience typedef. */
++    typedef SHIPRPParams Params;
++
++    /**
++     * Construct and initiliaze this replacement policy.
++     */
++    SHIPRP(const Params *p);
++
++    /**
++     * Destructor.
++     */
++    ~SHIPRP() {}
++
++    /**
++     * Invalidate replacement data to set it as the next probable victim.
++     * Set RRPV as the the most distant re-reference.
++     *
++     * @param replacement_data Replacement data to be invalidated.
++     */
++    void invalidate(const std::shared_ptr<ReplacementData>& replacement_data)
++                                                              const override;
++
++    /**
++     * Touch an entry to update its replacement data.
++     *
++     * @param replacement_data Replacement data to be touched.
++     */
++    void touch(const std::shared_ptr<ReplacementData>& replacement_data) const
++                                                                     override;
++
++    /**
++     * Reset replacement data. Used when an entry is inserted.
++     * Set RRPV according to the insertion policy used.
++     *
++     * @param replacement_data Replacement data to be reset.
++     */
++    void reset(const std::shared_ptr<ReplacementData>& replacement_data) const
++                                                                     override;
++
++    /**
++     * Find replacement victim using rrpv.
++     *
++     * @param cands Replacement candidates, selected by indexing policy.
++     * @return Replacement entry to be replaced.
++     */
++    ReplaceableEntry* getVictim(const ReplacementCandidates& candidates) const
++                                                                     override;
++
++    /**
++     * Instantiate a replacement data entry.
++     *
++     * @return A shared pointer to the new replacement data.
++     */
++    std::shared_ptr<ReplacementData> instantiateEntry() override;
++};
++
++#endif // __MEM_CACHE_REPLACEMENT_POLICIES_BRRIP_RP_HH__

@@ -1,0 +1,85 @@
+
+Khyati Mardia - ASU ID - 1215346587
+
+Patch is provided as - Assignmentpatch.patch
+
+Patch is obtained as :  diff --exclude=build --exclude=.git --exclude=tests -x '*.pyc' -x parsetab.py -x sftp-config.json -uNr gem5-master_new/src/mem/cache/replacement_policies gem5-master/src/mem/cache/replacement_policies > Assignmentpatch.patch
+
+(I assume that bug0208.patch is already applied on your gem5)
+
+To run patch : use command : patch -p1 < ~/Path_to_Assignmentpatch.patch
+
+Note : The fields to be read after obtaining outputs are :
+
+system.l2.overall_miss_rate::.cpu.inst              # miss rate for overall accesses
+system.l2.overall_miss_rate::.cpu.data              # miss rate for overall accesses
+system.l2.overall_miss_rate::total                  # miss rate for overall accesses
+
+Files modified/added are :
+
+1. ReplacementPolicies.py
+2. Sconscript
+3. ship_rp.cc
+4. ship_rp.hh
+
+All program files are warning free.
+
+Steps :
+
+i) Open the terminal and go to your gem5-master folder.
+
+Command : cd gem5-master
+
+ii) Build gem5-master by following commands.
+
+scons -j4 build/X86/gem5.opt
+scons -j4 build/X86/gem5.debug
+
+iii) To run LRU : 
+
+./build/X86/gem5.opt --outdir=Provide_The_path_of_your_folder_where_you_want_to_save_output - eg - /home/khyati/Desktop/CA/Assignment-2/GemOutput/LRU/MST_OPT_35000/LRU_L2_256kB configs/example/se.py --cpu-type=AtomicSimpleCPU --caches --l1i_size=32kB --l1d_size=32kB --l2cache --l2_size=256kB --l2_assoc=16 --l2_rpp="LRURP()" -c Provide_the_path_for_input_OPT_file - eg. - /home/khyati/gem5-master/benchmark/bin/MST_opt -o Provide_the_path_for_input_OPT_file -eg. -"/home/khyati/gem5-master/benchmark/MST_rMatGraph_WE_5_35000"
+
+Run below command for following combination
+
+1. For different L2 cache size : 256 kB , 1 MB and 4 MB 
+
+2. For different inputs : 
+
+ 2.1 Breadth First Search : BFS_randLocalGraph_J_5_120000 and BFS_rMatGraph_J_5_90000
+ 2.2 Min Spanning Forest  : MST_randLocalGraph_WE_5_100000 and MST_rMatGraph_WE_3_35000
+
+
+iV) To run SRRIP : 
+
+./build/X86/gem5.opt --outdir=Provide_The_path_of_your_folder_where_you_want_to_save_output - eg - /home/khyati/Desktop/CA/Assignment-2/GemOutput/LRU/MST_OPT_35000/LRU_L2_256kB configs/example/se.py --cpu-type=AtomicSimpleCPU --caches --l1i_size=32kB --l1d_size=32kB --l2cache --l2_size=256kB --l2_assoc=16 --l2_rpp="SRRIP()" -c Provide_the_path_for_input_OPT_file - eg. - /home/khyati/gem5-master/benchmark/bin/MST_opt -o Provide_the_path_for_input_OPT_file -eg. -"/home/khyati/gem5-master/benchmark/MST_rMatGraph_WE_5_35000"
+
+Run below command for following combination
+
+1. For different L2 cache size : 256 kB , 1 MB and 4 MB 
+
+2. For different inputs : 
+
+ 2.1 Breadth First Search : BFS_randLocalGraph_J_5_120000 and BFS_rMatGraph_J_5_90000
+ 2.2 Min Spanning Forest  : MST_randLocalGraph_WE_5_100000 and MST_rMatGraph_WE_3_35000
+
+
+V) To run SHiP : 
+
+./build/X86/gem5.opt --outdir=Provide_The_path_of_your_folder_where_you_want_to_save_output - eg - /home/khyati/Desktop/CA/Assignment-2/GemOutput/LRU/MST_OPT_35000/LRU_L2_256kB configs/example/se.py --cpu-type=AtomicSimpleCPU --caches --l1i_size=32kB --l1d_size=32kB --l2cache --l2_size=256kB --l2_assoc=16 --l2_rpp="SHIPRP()" -c Provide_the_path_for_input_OPT_file - eg. - /home/khyati/gem5-master/benchmark/bin/MST_opt -o Provide_the_path_for_input_OPT_file -eg. -"/home/khyati/gem5-master/benchmark/MST_rMatGraph_WE_5_35000"
+
+Run below command for following combination
+
+1. For different L2 cache size : 256 kB , 1 MB and 4 MB 
+
+2. For different inputs : 
+
+ 2.1 Breadth First Search : BFS_randLocalGraph_J_5_120000 and BFS_rMatGraph_J_5_90000
+ 2.2 Min Spanning Forest  : MST_randLocalGraph_WE_5_100000 and MST_rMatGraph_WE_3_35000
+
+ 
+
+
+
+
+
+
